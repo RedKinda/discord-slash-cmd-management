@@ -136,8 +136,11 @@ def list_commands(guild=None):
         commands.update(list_commands())
         offset += len(commands)
     with session.get(geturl, headers=headers) as resp:
-        for i, c in enumerate(resp.json()):
-            commands.add(ApplicationCommand(i + offset, **c))
+        if resp.status_code != 200:
+            print("Error retrieving commands! Code: {0} Reason: {1}".format(resp.status_code, resp.text))
+        else:
+            for i, c in enumerate(resp.json()):
+                commands.add(ApplicationCommand(i + offset, **c))
     return sorted(commands)
 
 
