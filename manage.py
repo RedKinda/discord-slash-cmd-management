@@ -1,10 +1,8 @@
 import argparse
 import getpass
 import json
-import logging
 import random
 import sys
-import traceback
 
 import requests
 
@@ -12,7 +10,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument("-c", "--configfile")
 config = parser.parse_args()
 
-#logging.basicConfig(level=logging.DEBUG)
+
+# logging.basicConfig(level=logging.DEBUG)
 
 
 class ArgumentParserNoExit(argparse.ArgumentParser):
@@ -33,7 +32,13 @@ class ApplicationCommand:
         self.name = name
         self.description = description
         self.guild = kwargs.pop("guild_id", None)
-        self.options = [ApplicationCommandOption(order+1, **params) for order, params in enumerate(options)]
+        self.default_permission = kwargs.pop("default_permission", True)
+        self.version = kwargs.pop("version", None)
+        self.type = kwargs.pop("type", None)
+        self.options = [ApplicationCommandOption(order + 1, **params) for order, params in enumerate(options)]
+
+        if kwargs != {}:
+            print(f"Unknown param passed for {self.name}: {kwargs}")
 
     def pretty_str(self, offset=0, long=False):
         optionstring = ""
@@ -42,20 +47,20 @@ class ApplicationCommand:
             if optionstring != "":
                 optionstring = " " + optionstring
 
-        ret = f"{' '*offset}{self.order}. {'Guild-only' if self.guild else 'Global'} Command '{self.name}{optionstring}'\n"
+        ret = f"{' ' * offset}{self.order}. {'Guild-only' if self.guild else 'Global'} Command '{self.name}{optionstring}'\n"
 
         if self.description != "No Description.":
-            ret += f"{' '*offset}   Description: {self.description}\n"
+            ret += f"{' ' * offset}   Description: {self.description}\n"
         if len(self.options) > 0:
             if long:
                 ret += f"{' ' * offset}   Arguments: \n"
-                ret += "".join([op.pretty_str(offset=offset+6) for op in self.options])
+                ret += "".join([op.pretty_str(offset=offset + 6) for op in self.options])
                 '''else:
                 ret += f"{' ' * offset}   Arguments: {', '.join([o.get_short_name() for o in self.options])} \n"'''
         return ret
 
     def get_dict(self):
-        ret = {k: self.__dict__[k] for k in ["name", "description"]}
+        ret = {k: self.__dict__[k] for k in ["name", "description", "default_permission"]}
         ret["options"] = [o.get_dict() for o in self.options]
         return ret
 
@@ -180,11 +185,9 @@ def edit_options(base):
         if prompt(f"Do you want to edit the option '{opt.name}'?", default_value=False, is_bool=True):
             edit_option(opt, base)
     while prompt("Do you want to add an option?", default_value=False, is_bool=True):
-        new_option = ApplicationCommandOption(len(base.options)+1, 3, "new option", "No Description.")
+        new_option = ApplicationCommandOption(len(base.options) + 1, 3, "new option", "No Description.")
         base.options.append(new_option)
         edit_option(new_option, base)
-
-
 
     print(f"-- Finished editing the options of '{base.name}' --")
 
@@ -228,7 +231,7 @@ def edit_option(opt, parent):
 
 def create_command(name=None, guild=None):
     name = prompt("name", "New command") if not name else name
-    #description = prompt("description", "No description.")
+    # description = prompt("description", "No description.")
     new_order = len(list_commands(guild=guild)) + 1
 
     class NewCommand:
@@ -248,12 +251,13 @@ def edit_command(command_id=None, guild=None):
     if not isinstance(command_id, ApplicationCommand):
         command_id = command_id or int(input("Order of the command you want to edit: "))
         cmds = list_commands(guild=guild)
-        editing = cmds[command_id-1]
+        editing = cmds[command_id - 1]
     else:
         editing = command_id
     print(f"-- Now editing the command '{editing.name}' --")
-    #editing.name = prompt("name", editing.name)  # Name can't be edited
+    # editing.name = prompt("name", editing.name)  # Name can't be edited
     editing.description = prompt("description", editing.description)
+    editing.default_permission = prompt("default_permission", default_value=editing.default_permission, convertor=bool)
 
     edit_options(editing)
 
@@ -267,7 +271,8 @@ def post_command(command):
     js = command.get_dict()
     with session.post(posturl, headers=headers, json=js) as resp:
         if not 200 <= resp.status_code < 300:
-            print("Update failed! Your changes were not recorded. Code: {0} Reason: {1}".format(resp.status_code, resp.text))
+            print("Update failed! Your changes were not recorded. Code: {0} Reason: {1}".format(resp.status_code,
+                                                                                                resp.text))
         else:
             print("Updated successfully!")
             return resp.json()
@@ -276,7 +281,7 @@ def post_command(command):
 def delete_command(command_id, guild=None):
     command_id = command_id or int(input("Order of the command you want to delete: "))
     cmds = list_commands(guild=guild)
-    command = cmds[command_id-1]
+    command = cmds[command_id - 1]
 
     print(command.pretty_str(long=True))
     if prompt(f"Do you really want to delete the command '{command.name}'?", default_value=False, is_bool=True):
@@ -295,7 +300,7 @@ if __name__ == "__main__":
         configdict = json.loads(open(config.configfile, "r").read())
 
     client_id = configdict.get("client_id", None) or input("Client ID: ")
-    application_key = configdict.get("application_key", None) or input("Application key: ")
+    # application_key = configdict.get("application_key", None) or input("Application key: ")
     bot_token = configdict.get("bot_token", None) or getpass.getpass(prompt="Bot token: ")
     guild_context = configdict.get("guild_context", None)
     command = "ls"
@@ -337,7 +342,8 @@ if __name__ == "__main__":
                     guildchange_parser.add_argument("-r", "--reset", action="store_true")
                     params = guildchange_parser.parse_args(args)
                     if not params.guild and not params.reset:
-                        print(f"Currently working in the context of the guild {str(guild_context) if guild_context else 'GLOBAL'}")
+                        print(
+                            f"Currently working in the context of the guild {str(guild_context) if guild_context else 'GLOBAL'}")
                     if params.guild:
                         guild_context = params.guild
                     if params.reset:
@@ -376,13 +382,7 @@ if __name__ == "__main__":
             except KeyboardInterrupt:
                 print("")
                 pass
-            except Exception as e:
+            except BaseException as e:
                 print("ERROR: " + str(e))
-                #traceback.print_exc()
-
-
-
-
-
-
-
+                print("Type 'exit' to exit the program")
+                # traceback.print_exc()
